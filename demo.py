@@ -3,20 +3,17 @@ from __future__ import division
 from __future__ import print_function
 
 import numpy as np
-import cPickle as pickle
+import pickle
 from zie import fit_emb
 from zie import evaluate_emb
-from random_data import rand_data
-
-
-
+from ground_truth_data import  real_data
 
 def experiment():
 
     ## Step 1: load data
-    print('Generating a dataset ...')
+    print('Retrieving datasets ...')
 
-    data = rand_data()
+    data = real_data()
 
     trainset = data['trainset']
     testset = data['testset']
@@ -51,10 +48,9 @@ def experiment():
     # in real application, it often needs more than 100k iterations to converge. So please check the validation log-likelihood
     # the model takes out 1/10 of the training data to show validation log-likelihood. 
     # In the printout lines, the three values are training log-likelihood, model objective (neg llh + regularizer), validation log-likelihood 
-    config = dict(K=16, exposure=True, use_covariates=True, dist='binomial',
-                  max_iter=10000, ar_sigma2=1, w_sigma2=1) 
-
-
+    K = 16
+    config = dict(K=K, exposure=False, use_covariates=False, dist='poisson',
+                  max_iter= 10 * 1000 * 1000, ar_sigma2=1, w_sigma2=1) 
 
     ## Step 3: Fit a Zero-Inflated Embedding model
 
@@ -63,14 +59,14 @@ def experiment():
     print('Training done!')
     
     # Step 4: Test the model 
-    print('Evaluating the model on test set ...')
-    llh_array, pos_llh_array = evaluate_emb(testset, emb_model, config)
-    print("The mean heldout log-likelihood over all entries and that over positive entries are ", 
-          np.mean(llh_array), ' and ', np.mean(pos_llh_array))
+    #print('Evaluating the model on test set ...')
+    #llh_array, pos_llh_array = evaluate_emb(testset, emb_model, config)
+    #print("The mean heldout log-likelihood over all entries and that over positive entries are ", 
+    #      np.mean(llh_array), ' and ', np.mean(pos_llh_array))
 
     # Step 5: Dump out embedding vectors
     print('Saving embedding vectors ...') 
-    pickle.dump(emb_model['alpha'], file('embedding_vectors.pkl', 'wb'))
+    pickle.dump(emb_model['alpha'], file('embedding_vectors_K{}.p'.format(K), 'wb'))
      
 
 if __name__ == '__main__':

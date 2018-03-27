@@ -9,11 +9,12 @@ import collections
 from scipy import sparse
 import sys
 from graph_builder import GraphBuilder
+from tqdm import tqdm
 import warnings
 
-def separate_valid(reviews, frac):
+def separate_valid(reviews, how_many):
     review_size = reviews['scores'].shape[0]
-    vind = np.random.choice(review_size, int(frac * review_size), replace=False)
+    vind = np.random.choice(review_size, how_many, replace=False)
     tind = np.delete(np.arange(review_size), vind)
 
     trainset = dict(scores=reviews['scores'][tind, :], atts=reviews['atts'][tind])
@@ -25,13 +26,13 @@ def separate_valid(reviews, frac):
 def validate(valid_reviews, session, inputs, outputs):
     valid_size = valid_reviews['scores'].shape[0]
     ins_llh = np.zeros(valid_size)
-    for iv in xrange(valid_size): 
+    for iv in tqdm(xrange(valid_size)):
         atts, indices, labels = generate_batch(valid_reviews, iv)
         if indices.size <= 1:
-            raise Exception('in validation set: row %d has only less than 2 non-zero entries' % iv)
+            raise Exception('in validation set: row %d has 8less than 2 non-zero entries' % iv)
         feed_dict = {inputs['input_att']: atts, inputs['input_ind']: indices, inputs['input_label']: labels}
         ins_llh[iv] = session.run((outputs['llh']), feed_dict=feed_dict)
-    
+
     mv_llh = np.mean(ins_llh)
     return mv_llh
 
@@ -44,7 +45,7 @@ def fit_emb(reviews, config):
 
     use_valid_set = True 
     if use_valid_set:
-        reviews, valid_reviews = separate_valid(reviews, 0.1)
+        reviews, valid_reviews = separate_valid(reviews, 10 * 1500)
 
     graph = tf.Graph()
     with graph.as_default():
@@ -53,20 +54,20 @@ def fit_emb(reviews, config):
         builder = GraphBuilder()
         inputs, outputs, model_param = builder.construct_model_graph(reviews, config, init_model=None, training=True)
 
-        optimizer = tf.train.AdagradOptimizer(0.05).minimize(outputs['objective'])
+        optimizer = tf.train.AdamOptimizer(learning_rate=0.01, epsilon=1.0).minimize(outputs['objective'])
         init = tf.global_variables_initializer()
 
     with tf.Session(graph=graph) as session:
         # We must initialize all variables before we use them.
         init.run()
 
-        nprint = 5000
+        nprint = 50 * 1000
         val_accum = np.array([0.0, 0.0])
         train_logg = np.zeros([int(config['max_iter'] / nprint) + 1, 3]) 
 
         review_size = reviews['scores'].shape[0]
-        for step in xrange(1, config['max_iter'] + 1):
-
+        pbar = tqdm(xrange(1, config['max_iter'] + 1))
+        for step in pbar:
             rind = np.random.choice(review_size)
             atts, indices, labels = generate_batch(reviews, rind)
             if indices.size <= 1: # neglect views with only one entry
@@ -76,9 +77,8 @@ def fit_emb(reviews, config):
             _, llh_val, obj_val, debug_val = session.run((optimizer, outputs['llh'], outputs['objective'], outputs['debugv']), feed_dict=feed_dict)
             val_accum = val_accum + np.array([llh_val, obj_val])
 
-            # print loss every nprint iterations
+            # print loss
             if step % nprint == 0 or np.isnan(llh_val) or np.isinf(llh_val):
-                
                 valid_llh = 0.0
                 break_flag = False
                 if use_valid_set:
@@ -91,12 +91,12 @@ def fit_emb(reviews, config):
                 ibatch = int(step / nprint)
                 train_logg[ibatch, :] = np.append(val_accum / nprint, valid_llh)
                 val_accum[:] = 0.0 # reset the accumulater
-                print("iteration[", step, "]: average llh, obj, and valid_llh are ", train_logg[ibatch, :])
+                print("\nValidation scores: average llh, obj, and valid_llh are {}".format( train_logg[ibatch, :]))
                 
                 if np.isnan(llh_val) or np.isinf(llh_val):
                     print('Loss value is ', llh_val, ', and the debug value is ', debug_val)
-                    raise Exception('Bad values')
-   
+                    #raise Exception('Bad values')
+
                 if break_flag:
                     break
 
